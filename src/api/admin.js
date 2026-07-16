@@ -1,13 +1,17 @@
 import { request } from './client.js';
 
-export function registerProduct({ name, description, price, stock }) {
-  return request('/api/admin/product/register', {
+export function registerProduct({ name, description, price, stock, type, visible, saleStartAt, saleEndAt }) {
+  return request('/api/admin/backoffice/product/register', {
     method: 'POST',
     body: JSON.stringify({
       name,
       description,
       price: Number(price),
-      stock: Number(stock)
+      stock: Number(stock),
+      type,
+      visible,
+      saleStartAt,
+      saleEndAt
     })
   });
 }

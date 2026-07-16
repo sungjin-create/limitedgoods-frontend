@@ -17,10 +17,19 @@ export function AdminShell({
 }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const currentSection = useMemo(
-    () => ADMIN_SECTIONS.find((section) => section.id === activeSection) ?? ADMIN_SECTIONS[0],
-    [activeSection]
-  );
+  const currentSection = useMemo(() => {
+    const directSection = ADMIN_SECTIONS.find((section) => section.id === activeSection);
+    if (directSection) return directSection;
+
+    for (const section of ADMIN_SECTIONS) {
+      if (!Array.isArray(section.children)) continue;
+
+      const child = section.children.find((item) => item.id === activeSection);
+      if (child) return child;
+    }
+
+    return ADMIN_SECTIONS[0];
+  }, [activeSection]);
 
   function handleSectionChange(sectionId) {
     setActiveSection(sectionId);

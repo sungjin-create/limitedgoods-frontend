@@ -33,6 +33,7 @@ import { ShopView } from './features/shop/ShopView.jsx';
 import { isAdminToken } from './utils/auth.js';
 import { getCartSummary, normalizeCartItems } from './utils/cart.js';
 import { normalizeOrder } from './utils/orders.js';
+import { INITIAL_PRODUCT_FORM } from "./types/product.js";
 
 const PRODUCT_PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -139,7 +140,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
-  const [adminForm, setAdminForm] = useState({ name: '', description: '', price: 59000, stock: 10 });
+  const [adminForm, setAdminForm] = useState(INITIAL_PRODUCT_FORM);
   const [notice, setNotice] = useState(initialNotice);
   const [loading, setLoading] = useState(false);
   const didMountSearch = useRef(false);
@@ -790,7 +791,7 @@ export default function App() {
       const data = await registerProduct(adminForm);
 
       await loadProducts(productPage);
-      setAdminForm({ name: '', description: '', price: 59000, stock: 10 });
+      setAdminForm(INITIAL_PRODUCT_FORM);
       setNotice({ type: 'success', message: `${data.name ?? adminForm.name} 상품을 등록했습니다.` });
     } catch (error) {
       setNotice({ type: 'error', message: error.message });

@@ -57,6 +57,14 @@ function normalizeAdminProducts(payload) {
     const status = product?.statusLabel
       ?? product?.status
       ?? (stock === 0 ? '품절' : '판매중');
+    const type = product?.type ?? product?.productType;
+    const visible = product?.visible ?? product?.isVisible ?? true;
+    const saleStartAt = product?.saleStartAt ?? product?.saleStartDate ?? null;
+    const saleEndAt = product?.saleEndAt ?? product?.saleEndDate ?? null;
+    const soldCount = Number(product?.soldCount ?? product?.salesCount ?? 0);
+    const initialStock = Number(product?.initialStock ?? product?.stock ?? 0);
+    const maxPurchaseQuantity = product?.maxPurchaseQuantity ?? null;
+
 
     return {
       id,
@@ -64,9 +72,15 @@ function normalizeAdminProducts(payload) {
       price: Number(product?.price ?? 0),
       stock,
       reserved,
-      sold,
+      initialStock,
+      soldCount,
       dropAt: product?.dropAt ?? product?.dropDate ?? '상시 판매',
-      status
+      status,
+      type,
+      visible,
+      saleStartAt,
+      saleEndAt,
+      maxPurchaseQuantity
     };
   });
 
@@ -75,6 +89,18 @@ function normalizeAdminProducts(payload) {
     summary: parseSummary(payload)
   };
 }
+
+const formatDateTime = (dateTime) => {
+  if (!dateTime) return "";
+
+  return new Date(dateTime).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 export function AdminProducts({ onMove }) {
   const [query, setQuery] = useState('');
@@ -126,9 +152,11 @@ export function AdminProducts({ onMove }) {
   const lowStockValue = summary?.lowStock ?? lowStockCount;
   const soldOutValue = summary?.soldOut ?? soldOutCount;
 
+
+
   return (
     <div className="admin-page-stack">
-      <SectionHeader eyebrow="Catalog management" title="상품 관리" description="판매 상품, 가용 재고와 예약 수량을 관리합니다." action={<button className="admin-primary-button" type="button" onClick={() => onMove('register')}><PackagePlus size={16} /> 새 상품 등록</button>} />
+      <SectionHeader eyebrow="Catalog management" title="상품 관리" description="판매 상품, 가용 재고와 예약 수량을 관리합니다." action={<button className="admin-primary-button" type="button" onClick={() => onMove('product-create')}><PackagePlus size={16} /> 새 상품 등록</button>} />
 
       {error && (
         <section className="admin-card admin-alert-item critical">
@@ -153,19 +181,140 @@ export function AdminProducts({ onMove }) {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="상품명/상품번호 검색" /></label>
           <button className="admin-outline-button" type="button"><ListFilter size={16} /> 판매 상태</button>
           <button className="admin-outline-button" type="button" onClick={loadProducts} disabled={loading}><RefreshCw size={16} /> {loading ? '불러오는 중' : '새로고침'}</button></div>
-        <div className="admin-table-scroll"><table className="admin-table product-table"><thead><tr><th>상품</th><th>판매가</th><th>가용 재고</th><th>예약</th><th>누적 판매</th><th>드롭 일정</th><th>상태</th><th /></tr></thead><tbody>
-          {filtered.length === 0 && (
-            <tr>
-              <td colSpan={8}>{loading ? '상품 데이터를 불러오는 중입니다.' : '조회된 상품이 없습니다.'}</td>
-            </tr>
-          )}
-          {filtered.map((product) => {
-            const stock = Number(product.stock ?? 0);
-            const status = product.status ?? (stock === 0 ? '품절' : '판매중');
+        <div className="admin-table-scroll"><table className="admin-table product-table"><thead>
+          <tr>
+            <th>ID</th>
+            <th>상품명</th>
+            <th>판매가</th>
+            <th>초기 재고</th>
+            <th>현재 재고</th>
+            <th>누적 판매</th>
+            <th>1인당 구매 갯수</th>
+            <th>타입</th>
+            <th>판매 일정</th>
+            <th>상품 노출 여부</th>
+            <th></th>
+            <th />
+          </tr></thead><tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={9}>{loading ? '상품 데이터를 불러오는 중입니다.' : '조회된 상품이 없습니다.'}</td>
+              </tr>
+            )}
+            {
+              filtered.map((product) => {
+                const status = product.status ?? (stock === 0 ? "품절" : "판매중");
+                const type = product.type;
 
-            return <tr key={product.id}><td><div className="admin-product-cell"><span>{String(product.name).slice(0, 1)}</span><div><strong>{product.name}</strong><small>SKU LG-{String(product.id).padStart(4, '0')}</small></div></div></td><td><strong>{won.format(product.price)}</strong></td><td><strong className={stock <= 10 ? 'stock-low' : ''}>{stock}개</strong></td><td>{product.reserved ?? 0}개</td><td>{product.sold ?? 0}개</td><td>{product.dropAt ?? '상시 판매'}</td><td><span className={`admin-product-status ${status === '품절' ? 'soldout' : status === '판매예정' ? 'scheduled' : ''}`}>{status}</span></td><td><button className="admin-icon-button" type="button"><Settings2 size={17} /></button></td></tr>;
-          })}
-        </tbody></table></div>
+                return (
+                  <tr key={product.id}>
+                    <td>
+                      <strong>{product.id}</strong>
+                    </td>
+
+                    <td>
+                      <div className="admin-product-cell">
+                        <div>
+                          <strong>{product.name}</strong>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td>
+                      <strong>{won.format(product.price)}</strong>
+                    </td>
+
+                    <td>
+                      <strong >
+                        {product.initialStock}개
+                      </strong>
+                    </td>
+
+                    <td>
+                      <strong>
+                        {product.stock}개
+                      </strong>
+                    </td>
+
+                    <td>
+                      <strong>
+                        {product.soldCount}개
+                      </strong>
+                    </td>
+
+                    <td>
+                      <span>
+                        {product.maxPurchaseQuantity == null ? "제한 없음" : product.maxPurchaseQuantity + "개"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span
+                        className={`admin-product-type ${type === "NORMAL"
+                          ? "normal"
+                          : type === "LIMITED"
+                            ? "limited"
+                            : ""
+                          }`}
+                      >
+                        {type}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="admin-sale-period">
+                        {product.saleStartAt ? (
+                          <>
+                            <span>{formatDateTime(product.saleStartAt)}</span>
+                            <span>~ {formatDateTime(product.saleEndAt)}</span>
+                          </>
+                        ) : (
+                          <span className="admin-sale-always">상시 판매</span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td>
+                      <label className="admin-switch">
+                        <input
+                          type="checkbox"
+                          checked={product.visible}
+                          disabled
+                          readOnly
+                        />
+                        <span className="admin-slider"></span>
+                      </label>
+                    </td>
+
+                    <td>
+                      <div className="admin-action-buttons">
+                        <button
+                          className="admin-outline-button"
+                          onClick={() => navigate(`/admin/products/${product.id}`)}
+                        >
+                          상세
+                        </button>
+
+                        <button
+                          className="admin-outline-button"
+                          onClick={() => navigate(`/admin/products/${product.id}/edit`)}
+                        >
+                          수정
+                        </button>
+
+                        <button
+                          className="admin-danger-button"
+                          onClick={() => navigate(`/admin/products/${product.id}/delete`)}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            }
+          </tbody></table></div>
       </section>
     </div>
   );

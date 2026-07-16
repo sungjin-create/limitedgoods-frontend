@@ -26,6 +26,32 @@
   font-weight: 750;
 }
 
+.admin-action-buttons {
+    display: flex;
+    gap: 6px;
+}
+.admin-outline-button,
+.admin-danger-button {
+    min-width: 52px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid #d9e0dc;
+    background: #fff;
+    font-size: .68rem;
+    cursor: pointer;
+    transition: .2s;
+}
+.admin-outline-button:hover {
+    background: #f5f7f6;
+}
+.admin-danger-button {
+    color: #d63b3b;
+    border-color: #f0b8b8;
+}
+.admin-danger-button:hover {
+    background: #fff4f4;
+}
+
 .admin-primary-button { min-height: 40px; padding: 0 13px; color: #fff; border: 1px solid #17231f; background: #17231f; }
 .admin-outline-button { min-height: 40px; padding: 0 13px; color: #26332e; border: 1px solid #d3dbd6; background: #fff; }
 .admin-text-button { padding: 6px 0; color: #4d6359; border: 0; background: transparent; }
@@ -157,6 +183,11 @@
 .admin-table-footer div { display: flex; align-items: center; gap: 5px; }
 .admin-table-footer button, .admin-table-footer b { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid #dce2df; border-radius: 6px; color: #5f6c65; background: #fff; }
 .admin-table-footer b { color: #fff; background: #263b31; }
+.admin-table th:first-child,
+.admin-table td:first-child {
+    width: 60px;
+    text-align: center;
+}
 
 .admin-drawer-backdrop { position: fixed; z-index: 20; inset: 0; display: flex; justify-content: flex-end; background: rgba(21, 31, 27, .35); backdrop-filter: blur(2px); }
 .admin-order-drawer { width: min(430px, 92vw); height: 100%; padding: 26px; overflow-y: auto; background: #fff; box-shadow: -18px 0 60px rgba(19, 32, 26, .2); }
@@ -200,12 +231,88 @@
 .admin-product-summary span, .admin-monitor-summary span, .admin-infra-grid span { color: #78857e; font-size: .68rem; }
 .admin-product-summary strong, .admin-monitor-summary strong, .admin-infra-grid strong { margin-top: 3px; color: #223029; font-size: 1.05rem; }
 .admin-monitor-summary small, .admin-infra-grid small { margin-top: 3px; color: #9ca5a1; font-size: .61rem; }
-.admin-product-cell { display: flex; align-items: center; gap: 9px; min-width: 190px; }
+.admin-product-cell { display: block; }
 .admin-product-cell > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 7px; color: #365d49; font-weight: 850; background: #eaf1ed; }
 .stock-low { color: #bc513f !important; }
 .admin-product-status, .admin-drop-status { display: inline-flex; padding: 5px 8px; border-radius: 999px; color: #23704f; font-size: .62rem; font-weight: 800; background: #e5f4eb; white-space: nowrap; }
 .admin-product-status.soldout { color: #8c4b41; background: #f8e8e5; }
 .admin-product-status.scheduled { color: #866024; background: #fff1d8; }
+.admin-product-visible, .admin-drop-status { display: inline-flex; padding: 5px 8px; border-radius: 999px; color: #23704f; font-size: .62rem; font-weight: 800; background: #e5f4eb; white-space: nowrap; }
+.admin-product-visible.true { color: #006923; background: #b8ffc4; }
+.admin-product-visible.false { color: #ff5252; background: #ffc1c6; }
+
+.admin-switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+}
+.admin-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.admin-slider {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+  background: #d5ddd8;
+  border-radius: 999px;
+  transition: .25s;
+}
+.admin-slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: .25s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.15);
+}
+.admin-switch input:checked + .admin-slider {
+  background: #1fa463;
+}
+.admin-switch input:checked + .admin-slider::before {
+  transform: translateX(18px);
+}
+.admin-switch input:disabled + .admin-slider {
+  cursor: not-allowed;
+  opacity: .9;
+}
+
+.admin-sale-period {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+}
+.admin-sale-period span {
+  color: #25322c;
+  font-size: .72rem;
+  font-weight: 700;
+}
+.admin-sale-period small {
+  color: #7d8983;
+  font-size: .62rem;
+}
+.admin-sale-always {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #3c6d57;
+  background: #edf6f1;
+  font-size: .62rem;
+  font-weight: 700;
+}
+
+.admin-product-type, .admin-drop-status { display: inline-flex; padding: 5px 8px; border-radius: 999px; color: #23704f; font-size: .62rem; font-weight: 800; background: #e5f4eb; white-space: nowrap; }
+.admin-product-type.limited { color: #866024; background: #f7d154; }
+.admin-product-type.normal { color: #23704f; background: #e5f4eb; }
 
 .admin-register-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
 .admin-register-form { display: grid; gap: 26px; }
@@ -433,6 +540,44 @@
 .admin-shell-sidebar nav strong { font-size: .76rem; }
 .admin-shell-sidebar nav small { margin-top: 3px; color: #71867b; font-size: .61rem; font-weight: 500; }
 .admin-shell-sidebar nav > button.active small { color: #aebeb6; }
+
+.admin-shell-subnav {
+  display: grid;
+  gap: 4px;
+  margin: 3px 0 7px;
+  padding: 0 0 0 48px;
+}
+
+.admin-shell-subnav > button {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 10px;
+  color: #9baea4;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+  background: transparent;
+}
+
+.admin-shell-subnav > button:hover { color: #e8f0ec; background: rgba(255,255,255,.055); }
+.admin-shell-subnav > button.active { color: #fff; border-color: rgba(241, 213, 101, .16); background: rgba(241, 213, 101, .1); }
+.admin-shell-subnav-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #8ea095;
+  background: rgba(255,255,255,.05);
+}
+
+.admin-shell-subnav > button.active .admin-shell-subnav-icon { color: #17231f; background: #f1d565; }
+.admin-shell-subnav strong { font-size: .7rem; }
+.admin-shell-subnav small { margin-top: 3px; color: #73867c; font-size: .58rem; font-weight: 500; }
 
 .admin-shell-sidebar-footer { display: grid; gap: 11px; margin-top: auto; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.09); }
 .admin-shell-api-state { display: flex; align-items: center; gap: 9px; padding: 4px 8px; }
