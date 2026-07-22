@@ -6,6 +6,9 @@ import { SectionHeader } from '../components/AdminUi.jsx';
 
 export function AdminProductRegister({ adminForm, loading, setAdminForm, onSubmit }) {
 
+const isScheduled = adminForm.status === 'SCHEDULED';
+const isAlwaysOnSale = !adminForm.saleStartAt && !adminForm.saleEndAt;
+
 const handleChange = (event) => {
   const { name, value, type, checked } = event.target;
 
@@ -14,6 +17,8 @@ const handleChange = (event) => {
     [name]:
       type === "checkbox"
         ? checked
+        : name === "maxPurchaseQuantity" && value === ""
+        ? null
         : type === "number"
         ? Number(value)
         : value,
@@ -62,11 +67,10 @@ const handleChange = (event) => {
               </label>
               <label>
                 <span>구매 제한</span>
-                <select name="purchaseLimit" value={adminForm.purchaseLimit} onChange={handleChange}>
-                  <option value="1">1인 1개</option>
-                  <option value="2">1인 2개</option>
-                  <option value="3">1인 3개</option>
-                </select>
+                <div className="admin-input-suffix">
+                  <input min="1" type="number" name="maxPurchaseQuantity" value={adminForm.maxPurchaseQuantity ?? ''} onChange={handleChange} placeholder="제한 없음" />
+                  <b>개</b>
+                </div>
               </label>
               <label>
                 <span>상품 타입</span>
@@ -76,10 +80,12 @@ const handleChange = (event) => {
                 </select>
               </label>
               <label>
-                <span>노출 여부</span>
-                <select name="visible" value={adminForm.visible} onChange={handleChange}>
-                  <option value="true">노출</option>
-                  <option value="false">비노출</option>
+                <span>판매 상태</span>
+                <select name="status" value={adminForm.status} onChange={handleChange}>
+                  <option value="DRAFT">임시저장</option>
+                  <option value="PREPARING">준비 중</option>
+                  <option value="SCHEDULED">판매 예정</option>
+                  <option value="ACTIVE">판매 중</option>
                 </select>
               </label>
             </div>
@@ -89,14 +95,23 @@ const handleChange = (event) => {
               <span>03</span>
               <h3>판매 일정</h3>
             </div>
+            <label className="admin-schedule-option">
+              <input
+                type="checkbox"
+                checked={isAlwaysOnSale}
+                disabled={isScheduled}
+                onChange={(event) => event.target.checked && setAdminForm((previous) => ({ ...previous, saleStartAt: '', saleEndAt: '' }))}
+              />
+              <span>상시 판매 <small>{isScheduled ? '판매 예정 상품은 판매 기간을 반드시 설정해야 합니다.' : '판매 시작·종료 시간을 비워 두면 null로 저장됩니다.'}</small></span>
+            </label>
             <div className="admin-form-grid">
               <label>
-                <span>판매 시작</span>
-                <input type="datetime-local" name="saleStartAt" value={adminForm.saleStartAt} onChange={handleChange} />
+                <span>판매 시작 {isScheduled && <b className="admin-required">필수</b>}</span>
+                <input required={isScheduled} step="600" type="datetime-local" name="saleStartAt" value={adminForm.saleStartAt} onChange={handleChange} />
               </label>
               <label>
-                <span>판매 종료</span>
-                <input type="datetime-local" name="saleEndAt" value={adminForm.saleEndAt} onChange={handleChange} />
+                <span>판매 종료 {isScheduled && <b className="admin-required">필수</b>}</span>
+                <input required={isScheduled} step="600" type="datetime-local" name="saleEndAt" value={adminForm.saleEndAt} onChange={handleChange} />
               </label>
             </div>
           </div>

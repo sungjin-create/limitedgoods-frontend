@@ -166,6 +166,10 @@
   opacity: 0.62;
 }
 
+.notice span {
+  white-space: pre-line;
+}
+
 .notice.subtle,
 .notice.info {
   color: #72847c;

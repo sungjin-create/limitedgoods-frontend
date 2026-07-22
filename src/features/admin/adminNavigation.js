@@ -6,7 +6,7 @@ import {
   PackagePlus,
   ShoppingCart,
   Sparkles,
-  Trash2
+  Warehouse
 } from 'lucide-react';
 
 export const ADMIN_SECTIONS = [
@@ -20,7 +20,7 @@ export const ADMIN_SECTIONS = [
     children: [
       { id: 'product-create', label: '상품 등록', description: '새로운 굿즈 등록', icon: PackagePlus },
       { id: 'product-update', label: '상품 변경', description: '상품 정보 수정', icon: Pencil },
-      { id: 'product-delete', label: '상품 삭제', description: '상품 비활성/삭제', icon: Trash2 }
+      { id: 'product-stock', label: '재고 관리', description: '입고 및 재고 조정', icon: Warehouse },
     ]
   },
   { id: 'monitoring', label: '모니터링', description: '트래픽과 요청 지표', icon: Activity },

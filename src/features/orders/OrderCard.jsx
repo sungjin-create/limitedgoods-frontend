@@ -51,17 +51,12 @@ function normalizeOrderItems(order) {
         name: item.productName ?? `상품 #${productId ?? '-'}`,
         quantity,
         price,
-        totalPrice: Number(price * quantity)
+        totalPrice: Number(item.lineTotalPrice ?? item.totalPrice ?? item.total_price ?? price * quantity)
       };
     });
   }
 
-  return [{
-    id: order.orderId ?? order.id,
-    name: order.productName ?? `상품 #${order.productId ?? '-'}`,
-    quantity: Number(order.quantity ?? 1),
-    totalPrice: Number(order.totalPrice ?? 0)
-  }];
+  return [];
 }
 
 function getPayButtonLabel(status) {
@@ -100,15 +95,42 @@ function getCancelButtonLabel(status) {
   return '주문 취소';
 }
 
-export function OrderCard({ order, loading, onPayOrder, onCancelOrder }) {
+export function OrderCard({ order, loading, onLoadOrderDetail, onPayOrder, onCancelOrder }) {
   const [isItemsOpen, setIsItemsOpen] = React.useState(false);
+  const [isDetailLoading, setIsDetailLoading] = React.useState(false);
+  const [detailError, setDetailError] = React.useState('');
   const orderId = order.orderId ?? order.id;
   const status = String(order.status ?? 'CREATED').toUpperCase();
+  const hasLoadedDetail = Array.isArray(order.items) || Array.isArray(order.orderItems);
   const orderItems = normalizeOrderItems(order);
   const itemCount = orderItems.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
   const displayTotal = Number(order.totalPrice ?? orderItems.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0));
   const canPay = PAYABLE_STATUSES.has(status);
   const canCancel = CANCELLABLE_STATUSES.has(status);
+
+  async function handleItemsToggle() {
+    if (isItemsOpen) {
+      setIsItemsOpen(false);
+      return;
+    }
+
+    setIsItemsOpen(true);
+    setDetailError('');
+
+    if (hasLoadedDetail || !orderId || !onLoadOrderDetail) {
+      return;
+    }
+
+    setIsDetailLoading(true);
+
+    try {
+      await onLoadOrderDetail(orderId);
+    } catch (error) {
+      setDetailError(error.message ?? '주문 상세를 불러오지 못했습니다.');
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
 
   return (
     <article className="order-card">
@@ -119,28 +141,40 @@ export function OrderCard({ order, loading, onPayOrder, onCancelOrder }) {
         </div>
 
         <h3>주문번호 #{orderId ?? '-'}</h3>
-        <p className="order-summary">총 {itemCount.toLocaleString('ko-KR')}개 · {won.format(displayTotal)}</p>
+        <p className="order-summary">
+          {hasLoadedDetail ? `총 ${itemCount.toLocaleString('ko-KR')}개 · ` : '주문 금액 · '}
+          {won.format(displayTotal)}
+        </p>
 
         <button
           className="order-items-toggle"
           type="button"
-          onClick={() => setIsItemsOpen((current) => !current)}
+          onClick={handleItemsToggle}
           aria-expanded={isItemsOpen}
         >
-          주문 아이템 {itemCount.toLocaleString('ko-KR')}개 {isItemsOpen ? '접기' : '보기'}
+          주문 아이템 {hasLoadedDetail ? `${itemCount.toLocaleString('ko-KR')}개 ` : ''}{isItemsOpen ? '접기' : '보기'}
           <ChevronDown size={16} className={isItemsOpen ? 'open' : ''} />
         </button>
 
         {isItemsOpen && (
-          <ul className="order-item-list">
-            {orderItems.map((item) => (
-              <li key={item.id}>
-                <span>{item.name}</span>
-                <span>{Number(item.quantity ?? 1).toLocaleString('ko-KR')}개</span>
-                <strong>{won.format(item.totalPrice ?? 0)}</strong>
-              </li>
-            ))}
-          </ul>
+          <>
+            {isDetailLoading && <p className="order-items-state">주문 아이템을 불러오는 중입니다.</p>}
+            {!isDetailLoading && detailError && <p className="order-items-state error">{detailError}</p>}
+            {!isDetailLoading && !detailError && hasLoadedDetail && orderItems.length === 0 && (
+              <p className="order-items-state">표시할 주문 아이템이 없습니다.</p>
+            )}
+            {!isDetailLoading && !detailError && orderItems.length > 0 && (
+              <ul className="order-item-list">
+                {orderItems.map((item) => (
+                  <li key={item.id}>
+                    <span>{item.name}</span>
+                    <span>{Number(item.quantity ?? 1).toLocaleString('ko-KR')}개</span>
+                    <strong>{won.format(item.totalPrice ?? 0)}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
       <div className="order-actions">

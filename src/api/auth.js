@@ -13,3 +13,7 @@ export function loginUser({ email, password }) {
     body: JSON.stringify({ email, password })
   });
 }
+
+export function getUserInfo() {
+  return request('/api/user/info', { authRequired: true });
+}

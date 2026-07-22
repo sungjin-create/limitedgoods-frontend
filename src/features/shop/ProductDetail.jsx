@@ -2,6 +2,8 @@ import React from 'react';
 import { ArrowLeft, Image, Minus, Plus, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles, Truck } from 'lucide-react';
 import { won } from '../../utils/format.js';
 import { getProductImages } from '../../utils/images.js';
+import { formatSaleDateTime, getProductAvailability, getPurchaseLimit } from '../../utils/productAvailability.js';
+import { ScheduledSaleNotice } from './ScheduledSaleNotice.jsx';
 
 export function ProductDetail({
   product,
@@ -18,6 +20,9 @@ export function ProductDetail({
   const mainImageUrl = imageUrls[0] ?? '';
   const thumbnailUrls = imageUrls.slice(0, 3);
   const isLimitedProduct = product?.type === 'LIMITED';
+  const availability = getProductAvailability(product);
+  const purchaseLimit = getPurchaseLimit(product);
+  const maxQuantity = Math.max(1, Math.min(99, Number(product?.stock ?? 0), purchaseLimit ?? 99));
 
   if (!product) {
     return null;
@@ -56,10 +61,23 @@ export function ProductDetail({
           <h2>{product.name}</h2>
           <p className="detail-description">{product.description ?? '한정 판매 상품입니다.'}</p>
 
+          <div className="detail-status-row">
+            <span className={`store-status ${availability.tone}`}>{availability.label}</span>
+            <span>{availability.message}</span>
+          </div>
+
+          <ScheduledSaleNotice product={product} />
+
           <div className="detail-price-row">
             <strong>{won.format(product.price ?? 0)}</strong>
             <span>남은 수량 {product.stock ?? '-'}</span>
           </div>
+
+          <dl className="product-detail-specs">
+            <div><dt>1인 구매 제한</dt><dd>{purchaseLimit ? `${purchaseLimit}개` : '제한 없음'}</dd></div>
+            <div><dt>판매 기간</dt><dd>{product.saleStartAt || product.saleEndAt ? `${formatSaleDateTime(product.saleStartAt) ?? '즉시'} ~ ${formatSaleDateTime(product.saleEndAt) ?? '상시'}` : '상시 판매'}</dd></div>
+            <div><dt>상품 상태</dt><dd>{availability.label}</dd></div>
+          </dl>
 
           <div className="detail-benefits">
             <div>
@@ -79,24 +97,24 @@ export function ProductDetail({
           <div className="quantity-control detail-quantity" aria-label="수량 선택">
             <span>수량</span>
             <div>
-              <button type="button" onClick={() => onQuantityChange(Math.max(1, safeQuantity - 1))}>
+              <button type="button" disabled={!availability.canPurchase || safeQuantity <= 1} onClick={() => onQuantityChange(Math.max(1, safeQuantity - 1))}>
                 <Minus size={16} />
               </button>
-              <input min="1" max="99" type="number" value={safeQuantity} onChange={(event) => onQuantityChange(Number(event.target.value))} />
-              <button type="button" onClick={() => onQuantityChange(Math.min(99, safeQuantity + 1))}>
+              <input min="1" max={maxQuantity} disabled={!availability.canPurchase} type="number" value={Math.min(safeQuantity, maxQuantity)} onChange={(event) => onQuantityChange(Math.min(maxQuantity, Math.max(1, Number(event.target.value))))} />
+              <button type="button" disabled={!availability.canPurchase || safeQuantity >= maxQuantity} onClick={() => onQuantityChange(Math.min(maxQuantity, safeQuantity + 1))}>
                 <Plus size={16} />
               </button>
             </div>
           </div>
 
           <div className="detail-actions">
-            <button className="secondary-button" type="button" disabled={loading || isLimitedProduct} onClick={onAddToCart}>
+            <button className="secondary-button" type="button" disabled={loading || isLimitedProduct || !availability.canPurchase} onClick={onAddToCart}>
               <ShoppingCart size={18} />
               {isLimitedProduct ? '한정 상품은 바로 주문만 가능' : '장바구니에 담기'}
             </button>
-            <button className="primary-button" type="button" disabled={!isSignedIn || loading} onClick={onCreateOrder}>
+            <button className="primary-button" type="button" disabled={!isSignedIn || loading || !availability.canPurchase} onClick={onCreateOrder}>
               <ShoppingBag size={18} />
-              {isSignedIn ? '바로 주문하기' : '로그인 후 주문하기'}
+              {!availability.canPurchase ? availability.label : isSignedIn ? '바로 주문하기' : '로그인 후 주문하기'}
             </button>
           </div>
         </div>

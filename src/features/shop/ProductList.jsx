@@ -1,7 +1,9 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Heart, Image, RefreshCw, ShoppingBag, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Image, RefreshCw, ShoppingBag } from 'lucide-react';
 import { won } from '../../utils/format.js';
 import { getProductImage } from '../../utils/images.js';
+import { getProductAvailability, getPurchaseLimit } from '../../utils/productAvailability.js';
+import { ScheduledSaleNotice } from './ScheduledSaleNotice.jsx';
 
 export function ProductList({
   products,
@@ -50,6 +52,8 @@ export function ProductList({
           </div>
         ) : products.map((product) => {
           const imageUrl = getProductImage(product);
+          const availability = getProductAvailability(product);
+          const purchaseLimit = getPurchaseLimit(product);
 
           return (
             <article
@@ -70,13 +74,18 @@ export function ProductList({
                   <span className={`product-badge badge-${product.type?.toLowerCase() ?? 'drop'}`}>{product.type ?? 'Drop'}</span>
                   <Heart className="wish-icon" size={18} />
                 </span>
-                <span className="product-card-body">
-                  <span className="rating"><Star size={14} /> 오늘의 드롭</span>
+                  <span className="product-card-body">
+                  <span className={`store-status ${availability.tone}`}>{availability.label}</span>
                   <strong>{product.name}</strong>
                   <small>{product.description ?? '한정 판매 상품'}</small>
+                  <ScheduledSaleNotice product={product} compact />
+                  <span className="product-card-meta">
+                    <span>{availability.message}</span>
+                    <span>{purchaseLimit ? `1인 최대 ${purchaseLimit}개` : '구매 수량 제한 없음'}</span>
+                  </span>
                   <span className="product-card-footer">
                     <b>{won.format(product.price ?? 0)}</b>
-                    <span>재고 {product.stock ?? '-'}</span>
+                    <span>{availability.canPurchase ? `재고 ${product.stock ?? '-'}` : availability.label}</span>
                   </span>
                 </span>
               </button>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { getProductImage } from '../../utils/images.js';
 import { ProductDetail } from './ProductDetail.jsx';
@@ -28,8 +28,27 @@ export function ShopView({
   onRefreshProducts,
   onProductPageChange
 }) {
+  const [availabilityTick, setAvailabilityTick] = useState(0);
   const heroImageUrl = getProductImage(selectedProduct);
   const heroStyle = heroImageUrl ? { '--hero-image': `url("${heroImageUrl}")` } : undefined;
+
+  useEffect(() => {
+    const now = Date.now();
+    const nextTransition = products
+      .flatMap((product) => [product.saleStartAt, product.saleEndAt])
+      .map((value) => value ? new Date(value).getTime() : NaN)
+      .filter((time) => Number.isFinite(time) && time > now)
+      .sort((first, second) => first - second)[0];
+
+    if (!nextTransition) return undefined;
+
+    const timeoutId = window.setTimeout(
+      () => setAvailabilityTick((tick) => tick + 1),
+      Math.max(0, nextTransition - now) + 100
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [products, availabilityTick]);
 
   if (isDetailOpen && selectedProduct) {
     return (

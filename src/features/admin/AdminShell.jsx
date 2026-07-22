@@ -12,10 +12,13 @@ export function AdminShell({
   products,
   setAdminForm,
   onSubmit,
+  onProductUpdated,
   onBackToStore,
   onLogout
 }) {
   const [activeSection, setActiveSection] = useState('overview');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productDraft, setProductDraft] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const currentSection = useMemo(() => {
     const directSection = ADMIN_SECTIONS.find((section) => section.id === activeSection);
@@ -34,6 +37,22 @@ export function AdminShell({
   function handleSectionChange(sectionId) {
     setActiveSection(sectionId);
     setIsMenuOpen(false);
+  }
+
+  function handleProductAction(product, sectionId) {
+    setSelectedProduct(product);
+    setProductDraft(product);
+    handleSectionChange(sectionId);
+  }
+
+  function handleProductDraftChange(nextDraft) {
+    setProductDraft(nextDraft);
+  }
+
+  function handleStockAdjusted(updatedProduct) {
+    setSelectedProduct((current) => current?.id === updatedProduct.id ? { ...current, ...updatedProduct } : current);
+    setProductDraft((current) => current?.id === updatedProduct.id ? { ...current, ...updatedProduct } : current);
+    onProductUpdated?.(updatedProduct);
   }
 
   return (
@@ -62,7 +81,12 @@ export function AdminShell({
             adminForm={adminForm}
             loading={loading}
             products={products}
+            selectedProduct={selectedProduct}
+            productDraft={productDraft ?? selectedProduct}
             setActiveSection={handleSectionChange}
+            onProductAction={handleProductAction}
+            onProductDraftChange={handleProductDraftChange}
+            onStockAdjusted={handleStockAdjusted}
             setAdminForm={setAdminForm}
             onSubmit={onSubmit}
           />

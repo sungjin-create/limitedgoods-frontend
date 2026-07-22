@@ -366,6 +366,32 @@
   line-height: 1.45;
 }
 
+.store-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #1d4f38;
+  font-size: .68rem;
+  font-weight: 850;
+  background: #e5f4eb;
+}
+
+.store-status.scheduled { color: #866024; background: #fff1d8; }
+.store-status.preparing { color: #4e665a; background: #eaf1ed; }
+.store-status.paused { color: #9a6128; background: #fff0df; }
+.store-status.hidden, .store-status.ended { color: #596760; background: #edf0ee; }
+.store-status.soldout { color: #8c4b41; background: #f8e8e5; }
+
+.product-card-meta {
+  display: grid;
+  gap: 3px;
+  color: #68766f;
+  font-size: .71rem;
+  line-height: 1.4;
+}
+
 .rating {
   display: inline-flex;
   align-items: center;
@@ -473,9 +499,78 @@
   line-height: 1.55;
 }
 
+.purchase-copy .store-status { margin-top: 10px; }
+.purchase-availability { display: block; margin-top: 6px; color: #6b7872; font-size: .72rem; line-height: 1.45; }
+
+.scheduled-sale-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid #f2cc73;
+  border-radius: 10px;
+  color: #704b0f;
+  background: linear-gradient(135deg, #fff8e8, #fff0c8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+
+.scheduled-sale-notice > svg {
+  flex: 0 0 auto;
+  color: #a66b0d;
+}
+
+.scheduled-sale-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.scheduled-sale-label {
+  color: #9a6a20;
+  font-size: .7rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.scheduled-sale-copy strong {
+  font-size: clamp(1.18rem, 2vw, 1.48rem);
+  line-height: 1.25;
+  word-break: keep-all;
+}
+
+.scheduled-sale-countdown {
+  color: #8b5d17;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.scheduled-sale-notice.compact {
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 8px;
+}
+
+.scheduled-sale-notice.compact .scheduled-sale-copy {
+  gap: 1px;
+}
+
+.scheduled-sale-notice.compact .scheduled-sale-label {
+  font-size: .62rem;
+}
+
+.scheduled-sale-notice.compact .scheduled-sale-copy strong {
+  font-size: .98rem;
+}
+
+.scheduled-sale-notice.compact .scheduled-sale-countdown {
+  font-size: .68rem;
+}
+
 .buy-box {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 10px;
 }
 
@@ -526,6 +621,13 @@
   border: 0;
   color: #111827;
   background: #ffffff;
+}
+
+.quantity-control button:disabled,
+.quantity-control input:disabled {
+  cursor: not-allowed;
+  color: #a1aaa5;
+  background: #f4f6f5;
 }
 
 .quantity-control input {
@@ -687,6 +789,20 @@
 .order-item-list li strong {
   color: #111827;
   font-size: 0.88rem;
+}
+
+.order-items-state {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+.order-items-state.error {
+  background: #fff1f2;
+  color: #be123c;
 }
 
 .order-actions {
@@ -941,6 +1057,34 @@
   color: #6b7280;
   font-weight: 800;
 }
+
+.detail-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  color: #65736c;
+  font-size: .78rem;
+}
+
+.product-detail-specs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.product-detail-specs > div {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #edf0ee;
+  border-radius: 7px;
+  background: #fafcfb;
+}
+
+.product-detail-specs dt { color: #7b8881; font-size: .66rem; }
+.product-detail-specs dd { margin: 5px 0 0; color: #293830; font-size: .74rem; font-weight: 800; line-height: 1.4; word-break: keep-all; }
 
 .detail-benefits {
   display: grid;

@@ -4,18 +4,33 @@ export function getOrders() {
   return request('/api/user/order', { authRequired: true });
 }
 
+export function getOrderDetail(orderId) {
+  return request(`/api/user/order/${Number(orderId)}`, {
+    authRequired: true
+  });
+}
+
 export function createOrder(items, { checkoutToken, admissionToken } = {}) {
+  if (!checkoutToken) {
+    throw new Error('주문 생성에 필요한 checkoutToken이 없습니다.');
+  }
+
+  const body = {
+    checkoutToken,
+    items: items.map((item) => ({
+      productId: Number(item.productId),
+      quantity: Number(item.quantity)
+    }))
+  };
+
+  if (admissionToken) {
+    body.admissionToken = admissionToken;
+  }
+
   return request('/api/user/order/create', {
     authRequired: true,
     method: 'POST',
-    body: JSON.stringify({
-      checkoutToken,
-      admissionToken,
-      items: items.map((item) => ({
-        productId: Number(item.productId),
-        quantity: Number(item.quantity)
-      }))
-    })
+    body: JSON.stringify(body)
   });
 }
 

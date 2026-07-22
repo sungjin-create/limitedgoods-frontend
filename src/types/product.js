@@ -5,8 +5,9 @@ export const INITIAL_PRODUCT_FORM = {
     description: "",
     price: 0,
     stock: 0,
+    maxPurchaseQuantity: null,
     type: PRODUCT_STATUS.NORMAL,
-    visible: true,
+    status: "DRAFT",
     saleStartAt: "",
     saleEndAt: ""
 };

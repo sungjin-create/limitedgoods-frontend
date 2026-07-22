@@ -8,10 +8,12 @@ import {
   createOrder,
   deleteCartItem,
   getCart,
+  getOrderDetail,
   getOrders,
   getProducts,
   enterQueue,
   getQueueStatus,
+  getUserInfo,
   loginUser,
   payOrder,
   registerProduct,
@@ -33,6 +35,7 @@ import { ShopView } from './features/shop/ShopView.jsx';
 import { isAdminToken } from './utils/auth.js';
 import { getCartSummary, normalizeCartItems } from './utils/cart.js';
 import { normalizeOrder } from './utils/orders.js';
+import { getProductAvailability, getPurchaseLimit } from './utils/productAvailability.js';
 import { INITIAL_PRODUCT_FORM } from "./types/product.js";
 
 const PRODUCT_PAGE_SIZE = 12;
@@ -99,6 +102,12 @@ function normalizeQueueResponse(data) {
     admissionToken,
     position: Number.isFinite(positionNumber) && positionNumber > 0 ? positionNumber : null
   };
+}
+
+function validateAdmissionSnapshot(snapshot) {
+  if (snapshot.admitted && !snapshot.admissionToken) {
+    throw new Error('입장은 허용됐지만 admissionToken을 받지 못했습니다. 대기열에 다시 진입해 주세요.');
+  }
 }
 
 function getCheckoutStorageKey(checkoutKey) {
@@ -228,6 +237,8 @@ export default function App() {
     try {
       const snapshot = normalizeQueueResponse(await getQueueStatus(queueRequest.productId));
 
+      validateAdmissionSnapshot(snapshot);
+
       if (queueSessionRef.current !== sessionId) {
         return;
       }
@@ -323,6 +334,8 @@ export default function App() {
 
     const snapshot = normalizeQueueResponse(await enterQueue(productId));
 
+    validateAdmissionSnapshot(snapshot);
+
     if (queueSessionRef.current !== sessionId) {
       return;
     }
@@ -381,10 +394,9 @@ export default function App() {
 
     async function validateSession() {
       try {
-        const data = await getCart();
+        await getUserInfo();
 
         if (!cancelled) {
-          setCartItems(normalizeCartItems(data));
           setAuthStatus('authenticated');
         }
       } catch (error) {
@@ -420,8 +432,10 @@ export default function App() {
   useEffect(() => {
     if (isSignedIn) {
       loadOrders();
+      loadCart();
     } else {
       setOrders([]);
+      setCartItems([]);
     }
   }, [isSignedIn]);
 
@@ -573,7 +587,15 @@ export default function App() {
       return;
     }
 
-    const safeQuantity = Math.max(1, Number(quantity) || 1);
+    const availability = getProductAvailability(selectedProduct);
+    if (!availability.canPurchase) {
+      setNotice({ type: 'error', message: availability.message });
+      return;
+    }
+
+    const purchaseLimit = getPurchaseLimit(selectedProduct);
+    const maxQuantity = Math.min(Number(selectedProduct.stock ?? 0), purchaseLimit ?? Number.MAX_SAFE_INTEGER);
+    const safeQuantity = Math.max(1, Math.min(maxQuantity, Number(quantity) || 1));
     setLoading(true);
 
     try {
@@ -597,6 +619,16 @@ export default function App() {
       return;
     }
 
+    const availability = getProductAvailability(selectedProduct);
+    if (!availability.canPurchase) {
+      setNotice({ type: 'error', message: availability.message });
+      return;
+    }
+
+    const purchaseLimit = getPurchaseLimit(selectedProduct);
+    const maxQuantity = Math.min(Number(selectedProduct.stock ?? 0), purchaseLimit ?? Number.MAX_SAFE_INTEGER);
+    const safeQuantity = Math.max(1, Math.min(maxQuantity, Number(quantity) || 1));
+
     if (isCreatingCheckout.current) {
       return;
     }
@@ -612,10 +644,21 @@ export default function App() {
           description: selectedProduct.description,
           imageUrl: selectedProduct.imageUrl,
           price: selectedProduct.price,
-          quantity: Number(quantity)
+          quantity: safeQuantity
         }
       ];
-      await beginQueuedCheckout(orderItems);
+
+      if (selectedProduct.type === 'LIMITED') {
+        await beginQueuedCheckout(orderItems);
+      } else {
+        const { checkoutKey, checkoutToken } = getCheckoutToken(orderItems);
+
+        await createCheckoutOrder(orderItems, {
+          checkoutKey,
+          checkoutToken,
+          successMessage: `${selectedProduct.name} 주문서가 생성되었습니다.`
+        });
+      }
     } catch (error) {
       setNotice({ type: 'error', message: error.message });
     } finally {
@@ -776,6 +819,27 @@ export default function App() {
     }
   }
 
+  async function loadOrderDetail(orderId) {
+    const detail = await getOrderDetail(orderId);
+
+    setOrders((current) => current.map((order) => {
+      const currentOrderId = order.orderId ?? order.id;
+
+      if (String(currentOrderId) !== String(orderId)) {
+        return order;
+      }
+
+      return {
+        ...order,
+        ...detail,
+        orderId: detail.orderId ?? detail.id ?? currentOrderId,
+        items: Array.isArray(detail.items) ? detail.items : []
+      };
+    }));
+
+    return detail;
+  }
+
   async function handleRegisterProduct(event) {
     event.preventDefault();
 
@@ -859,6 +923,11 @@ export default function App() {
         products={products}
         setAdminForm={setAdminForm}
         onSubmit={handleRegisterProduct}
+        onProductUpdated={(updatedProduct) => {
+          setProducts((current) => current.map((product) => (
+            product.id === updatedProduct.id ? { ...product, ...updatedProduct } : product
+          )));
+        }}
         onBackToStore={handleBackToStore}
         onLogout={handleLogout}
       />
@@ -969,6 +1038,7 @@ export default function App() {
             loading={loading}
             isSignedIn={isSignedIn}
             onRefresh={loadOrders}
+            onLoadOrderDetail={loadOrderDetail}
             onPayOrder={handlePayOrder}
             onCancelOrder={handleCancelOrder}
           />

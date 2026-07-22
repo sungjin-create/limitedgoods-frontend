@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Boxes, CheckCircle2, ListFilter, PackagePlus, RefreshCw, Search, Settings2, XCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Boxes, CheckCircle2, PackagePlus, RefreshCw, Search, XCircle } from 'lucide-react';
 import { getAdminProducts } from '../../../api/admin.js';
 import { SectionHeader, won } from '../components/AdminUi.jsx';
 
@@ -54,11 +54,8 @@ function normalizeAdminProducts(payload) {
     const stock = Number(product?.stock ?? product?.availableStock ?? 0);
     const reserved = Number(product?.reserved ?? product?.reservedStock ?? 0);
     const sold = Number(product?.sold ?? product?.salesCount ?? 0);
-    const status = product?.statusLabel
-      ?? product?.status
-      ?? (stock === 0 ? '품절' : '판매중');
     const type = product?.type ?? product?.productType;
-    const visible = product?.visible ?? product?.isVisible ?? true;
+    const status = product?.status;
     const saleStartAt = product?.saleStartAt ?? product?.saleStartDate ?? null;
     const saleEndAt = product?.saleEndAt ?? product?.saleEndDate ?? null;
     const soldCount = Number(product?.soldCount ?? product?.salesCount ?? 0);
@@ -75,9 +72,8 @@ function normalizeAdminProducts(payload) {
       initialStock,
       soldCount,
       dropAt: product?.dropAt ?? product?.dropDate ?? '상시 판매',
-      status,
       type,
-      visible,
+      status,
       saleStartAt,
       saleEndAt,
       maxPurchaseQuantity
@@ -102,34 +98,51 @@ const formatDateTime = (dateTime) => {
   });
 };
 
-export function AdminProducts({ onMove }) {
+const STATUS_FILTERS = [
+  { value: 'ALL', label: '전체' },
+  { value: 'DRAFT', label: '임시 저장' },
+  { value: 'PREPARING', label: '준비 중' },
+  { value: 'SCHEDULED', label: '판매 예정' },
+  { value: 'ACTIVE', label: '판매 중' },
+  { value: 'PAUSED', label: '판매 중지' },
+  { value: 'HIDDEN', label: '비공개' },
+  { value: 'ARCHIVED', label: '운영 종료' }
+];
+
+export function AdminProducts({ onMove, onProductAction }) {
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [products, setProducts] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const latestRequestRef = useRef(0);
 
-  async function loadProducts() {
+  async function loadProducts(status = statusFilter) {
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
     setLoading(true);
     setError('');
 
     try {
-      const payload = await getAdminProducts();
+      const payload = await getAdminProducts({ status });
       const normalized = normalizeAdminProducts(payload);
+      if (latestRequestRef.current !== requestId) return;
       setProducts(normalized.products);
       setSummary(normalized.summary);
     } catch (err) {
+      if (latestRequestRef.current !== requestId) return;
       setError(err.message || '상품 데이터를 불러오지 못했습니다.');
       setProducts([]);
       setSummary(null);
     } finally {
-      setLoading(false);
+      if (latestRequestRef.current === requestId) setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadProducts();
-  }, []);
+    loadProducts(statusFilter);
+  }, [statusFilter]);
 
   const keyword = query.trim().toLowerCase();
   const filtered = useMemo(() => products.filter((product) => {
@@ -179,8 +192,14 @@ export function AdminProducts({ onMove }) {
         <div className="admin-table-toolbar"><label className="admin-search">
           <Search size={17} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="상품명/상품번호 검색" /></label>
-          <button className="admin-outline-button" type="button"><ListFilter size={16} /> 판매 상태</button>
-          <button className="admin-outline-button" type="button" onClick={loadProducts} disabled={loading}><RefreshCw size={16} /> {loading ? '불러오는 중' : '새로고침'}</button></div>
+          <button className="admin-outline-button" type="button" onClick={() => loadProducts(statusFilter)} disabled={loading}><RefreshCw size={16} /> {loading ? '불러오는 중' : '새로고침'}</button></div>
+        <div className="admin-filter-tabs" aria-label="판매 상태 필터">
+          {STATUS_FILTERS.map((filter) => (
+            <button className={statusFilter === filter.value ? 'active' : ''} type="button" key={filter.value} onClick={() => setStatusFilter(filter.value)}>
+              {filter.label}
+            </button>
+          ))}
+        </div>
         <div className="admin-table-scroll"><table className="admin-table product-table"><thead>
           <tr>
             <th>ID</th>
@@ -192,7 +211,7 @@ export function AdminProducts({ onMove }) {
             <th>1인당 구매 갯수</th>
             <th>타입</th>
             <th>판매 일정</th>
-            <th>상품 노출 여부</th>
+            <th>상태</th>
             <th></th>
             <th />
           </tr></thead><tbody>
@@ -203,8 +222,6 @@ export function AdminProducts({ onMove }) {
             )}
             {
               filtered.map((product) => {
-                const status = product.status ?? (stock === 0 ? "품절" : "판매중");
-                const type = product.type;
 
                 return (
                   <tr key={product.id}>
@@ -250,14 +267,14 @@ export function AdminProducts({ onMove }) {
 
                     <td>
                       <span
-                        className={`admin-product-type ${type === "NORMAL"
+                        className={`admin-product-type ${product.type === "NORMAL"
                           ? "normal"
-                          : type === "LIMITED"
+                            : product.type === "LIMITED"
                             ? "limited"
                             : ""
                           }`}
                       >
-                        {type}
+                        {product.type}
                       </span>
                     </td>
 
@@ -275,39 +292,46 @@ export function AdminProducts({ onMove }) {
                     </td>
 
                     <td>
-                      <label className="admin-switch">
-                        <input
-                          type="checkbox"
-                          checked={product.visible}
-                          disabled
-                          readOnly
-                        />
-                        <span className="admin-slider"></span>
-                      </label>
+                      <span
+                        className={`admin-product-status ${product.status === "DRAFT"
+                          ? "draft"
+                            : product.status === "PREPARING"
+                            ? "preparing"
+                            : product.status === "SCHEDULED"
+                            ? "scheduled"
+                            : product.status === "ACTIVE"
+                            ? "active"
+                            : product.status === "PAUSED"
+                            ? "paused"
+                            : product.status === "HIDDEN"
+                            ? "hidden"
+                            : product.status === "ARCHIVED"
+                            ? "archived"
+                            : ""
+                          }`}
+                      >
+                        {product.status}
+                      </span>
                     </td>
 
                     <td>
                       <div className="admin-action-buttons">
                         <button
                           className="admin-outline-button"
-                          onClick={() => navigate(`/admin/products/${product.id}`)}
+                          type="button"
+                          onClick={() => onProductAction(product, 'product-stock')}
                         >
-                          상세
+                          재고
                         </button>
 
                         <button
                           className="admin-outline-button"
-                          onClick={() => navigate(`/admin/products/${product.id}/edit`)}
+                          type="button"
+                          onClick={() => onProductAction(product, 'product-update')}
                         >
                           수정
                         </button>
 
-                        <button
-                          className="admin-danger-button"
-                          onClick={() => navigate(`/admin/products/${product.id}/delete`)}
-                        >
-                          삭제
-                        </button>
                       </div>
                     </td>
                   </tr>
