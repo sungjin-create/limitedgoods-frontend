@@ -18,14 +18,14 @@ export const won = new Intl.NumberFormat('ko-KR', {
 export const STATUS_LABEL = {
   CREATED: '주문 생성',
   PAYMENT_PENDING: '결제 진행',
-  PAYMENT_APPROVED: '승인 완료',
+  PAYMENT_APPROVED: '외부 결제 승인',
   PAID: '결제 완료',
   PAYMENT_FAILED: '결제 실패',
   CANCEL_REQUESTED: '취소 요청',
   CANCEL_FAILED: '취소 실패',
   REFUNDED: '환불 완료',
   CANCELED: '주문 취소',
-  COMPLETED: '처리 완료',
+  COMPLETED: '주문 완료',
   EXPIRED: '주문 만료'
 };
 

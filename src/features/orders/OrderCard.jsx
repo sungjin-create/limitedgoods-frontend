@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, CreditCard, XCircle } from 'lucide-react';
+import { ChevronDown, CreditCard, MessageCircle, XCircle } from 'lucide-react';
 import { won } from '../../utils/format.js';
 
 const STATUS_TEXT = {
@@ -17,7 +17,7 @@ const STATUS_TEXT = {
 };
 
 const PAYABLE_STATUSES = new Set(['CREATED', 'PAYMENT_PENDING', 'PAYMENT_APPROVED', 'PAYMENT_FAILED']);
-const CANCELLABLE_STATUSES = new Set(['CREATED', 'PAYMENT_PENDING', 'PAYMENT_APPROVED', 'PAID', 'PAYMENT_FAILED', 'CANCEL_FAILED']);
+const CANCELLABLE_STATUSES = new Set(['PAID']);
 
 function formatOrderTime(value) {
   if (!value) {
@@ -107,6 +107,7 @@ export function OrderCard({ order, loading, onLoadOrderDetail, onPayOrder, onCan
   const displayTotal = Number(order.totalPrice ?? orderItems.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0));
   const canPay = PAYABLE_STATUSES.has(status);
   const canCancel = CANCELLABLE_STATUSES.has(status);
+  const canContactAdmin = status === 'COMPLETED';
 
   async function handleItemsToggle() {
     if (isItemsOpen) {
@@ -189,6 +190,15 @@ export function OrderCard({ order, loading, onLoadOrderDetail, onPayOrder, onCan
             <XCircle size={17} />
             {getCancelButtonLabel(status)}
           </button>
+        )}
+        {canContactAdmin && (
+          <div className="order-contact-action">
+            <button className="secondary-button" type="button" disabled title="관리자 문의 기능은 준비 중입니다.">
+              <MessageCircle size={17} />
+              관리자에게 문의하기
+            </button>
+            <small>기능 준비 중</small>
+          </div>
         )}
       </div>
     </article>

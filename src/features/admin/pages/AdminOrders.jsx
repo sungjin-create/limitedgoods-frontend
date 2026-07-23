@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarClock, Eye, ListFilter, RefreshCw, Search } from 'lucide-react';
-import { getAdminOrders } from '../../../api/admin.js';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Eye, ListFilter, RefreshCw, Search } from 'lucide-react';
+import { completeAdminOrder, getAdminOrders } from '../../../api/admin.js';
 import { SectionHeader, STATUS_LABEL, StatusBadge, won } from '../components/AdminUi.jsx';
 
 function toDateInputValue(value) {
@@ -166,8 +166,22 @@ export function AdminOrders() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionMessage, setActionMessage] = useState(null);
+  const [completingOrderId, setCompletingOrderId] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const filters = ['ALL', 'PAYMENT_PENDING', 'PAID', 'PAYMENT_FAILED', 'CANCEL_REQUESTED'];
+  const latestRequestRef = useRef(0);
+  const filters = [
+    'ALL',
+    'CREATED',
+    'PAYMENT_PENDING',
+    'PAYMENT_APPROVED',
+    'PAYMENT_FAILED',
+    'CANCEL_FAILED',
+    'REFUNDED',
+    'CANCELED',
+    'COMPLETED',
+    'EXPIRED'
+  ];
 
   const periodLabel = periodType === 'TODAY'
     ? '오늘'
@@ -191,15 +205,20 @@ export function AdminOrders() {
       return;
     }
 
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+
     setLoading(true);
     setError('');
 
     try {
       const payload = await getAdminOrders(range);
       const normalizedOrders = normalizeOrdersPayload(payload);
+      if (latestRequestRef.current !== requestId) return;
       setOrders(normalizedOrders);
       setSummary(buildSummary(payload, normalizedOrders));
     } catch (err) {
+      if (latestRequestRef.current !== requestId) return;
       setError(err.message || '주문 데이터를 불러오지 못했습니다.');
       setOrders([]);
       setSummary({
@@ -209,12 +228,16 @@ export function AdminOrders() {
         paymentFailed: 0
       });
     } finally {
-      setLoading(false);
+      if (latestRequestRef.current === requestId) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadOrders('TODAY');
+
+    return () => {
+      latestRequestRef.current += 1;
+    };
   }, []);
 
   function handlePeriodClick(type) {
@@ -230,6 +253,31 @@ export function AdminOrders() {
     loadOrders('CUSTOM');
   }
 
+  async function handleCompleteOrder(order) {
+    if (order.status !== 'PAID' || completingOrderId !== null) return;
+
+    const confirmed = window.confirm(`주문 #${order.id}을 주문 완료 상태로 변경할까요?`);
+    if (!confirmed) return;
+
+    setCompletingOrderId(order.id);
+    setActionMessage(null);
+
+    try {
+      await completeAdminOrder(order.id);
+      setOrders((currentOrders) => currentOrders.map((item) => (
+        item.id === order.id ? { ...item, status: 'COMPLETED' } : item
+      )));
+      setSelectedOrder((currentOrder) => (
+        currentOrder?.id === order.id ? { ...currentOrder, status: 'COMPLETED' } : currentOrder
+      ));
+      setActionMessage({ type: 'success', message: `주문 #${order.id}을 완료 처리했습니다.` });
+    } catch (err) {
+      setActionMessage({ type: 'error', message: err.message || '주문 완료 처리에 실패했습니다.' });
+    } finally {
+      setCompletingOrderId(null);
+    }
+  }
+
   const filteredOrders = useMemo(() => orders.filter((order) => {
     const matchesFilter = filter === 'ALL' || order.status === filter;
     const keyword = query.trim().toLowerCase();
@@ -242,9 +290,18 @@ export function AdminOrders() {
       );
   }), [orders, filter, query]);
 
+  const priorityCounts = useMemo(() => orders.reduce(
+    (counts, order) => {
+      if (order.status === 'PAID') counts.paid += 1;
+      if (order.status === 'CANCEL_REQUESTED') counts.cancelRequested += 1;
+      return counts;
+    },
+    { paid: 0, cancelRequested: 0 }
+  ), [orders]);
+
   return (
     <div className="admin-page-stack">
-      <SectionHeader eyebrow="Order management" title="주문 관리" description="주문과 결제 상태를 조회하고 취소·환불 요청을 처리합니다." action={<button className="admin-primary-button" type="button" onClick={loadOrders} disabled={loading}><RefreshCw size={16} /> {loading ? '동기화 중' : '주문 동기화'}</button>} />
+      <SectionHeader eyebrow="Order management" title="주문 관리" description="결제가 끝난 PAID 주문을 확인하고 COMPLETED 상태로 완료 처리합니다." action={<button className="admin-primary-button" type="button" onClick={() => loadOrders(periodType)} disabled={loading}><RefreshCw size={16} /> {loading ? '동기화 중' : '주문 동기화'}</button>} />
 
       {error && (
         <section className="admin-card admin-alert-item critical">
@@ -254,6 +311,13 @@ export function AdminOrders() {
             <p>{error}</p>
             <small>백엔드의 /api/admin/backoffice/order 응답을 확인해 주세요.</small>
           </div>
+        </section>
+      )}
+
+      {actionMessage && (
+        <section className={`admin-order-action-message ${actionMessage.type}`} role="status">
+          {actionMessage.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+          <span>{actionMessage.message}</span>
         </section>
       )}
 
@@ -279,8 +343,44 @@ export function AdminOrders() {
             </>
           )}
         </div>
+        <div className="admin-priority-filter-area">
+          <div className="admin-priority-filter-heading">
+            <strong>우선 처리</strong>
+            <span>관리자의 확인이 필요한 주문입니다.</span>
+          </div>
+          <div className="admin-priority-filters">
+            <button
+              className={`admin-priority-filter paid ${filter === 'PAID' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setFilter('PAID')}
+            >
+              <span className="admin-priority-filter-icon"><CheckCircle2 size={18} /></span>
+              <span className="admin-priority-filter-copy">
+                <strong>완료 처리 대기</strong>
+                <small>PAID · 완료 전환 필요</small>
+              </span>
+              <strong className="admin-priority-filter-count">{loading ? '-' : priorityCounts.paid}<small>건</small></strong>
+            </button>
+            <button
+              className={`admin-priority-filter cancel ${filter === 'CANCEL_REQUESTED' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setFilter('CANCEL_REQUESTED')}
+            >
+              <span className="admin-priority-filter-icon"><AlertTriangle size={18} /></span>
+              <span className="admin-priority-filter-copy">
+                <strong>취소 처리 대기</strong>
+                <small>취소 요청 · 확인 필요</small>
+              </span>
+              <strong className="admin-priority-filter-count">{loading ? '-' : priorityCounts.cancelRequested}<small>건</small></strong>
+            </button>
+          </div>
+        </div>
         <div className="admin-filter-tabs">
-          {filters.map((item) => <button className={filter === item ? 'active' : ''} type="button" key={item} onClick={() => setFilter(item)}>{item === 'ALL' ? '전체' : STATUS_LABEL[item]}</button>)}
+          {filters.map((item) => (
+            <button className={filter === item ? 'active' : ''} type="button" key={item} onClick={() => setFilter(item)}>
+              {item === 'ALL' ? '전체 주문' : STATUS_LABEL[item]}
+            </button>
+          ))}
         </div>
         <div className="admin-table-scroll">
           <table className="admin-table">
@@ -300,7 +400,17 @@ export function AdminOrders() {
                   <td><strong>{won.format(order.amount)}</strong></td>
                   <td><StatusBadge status={order.status} /></td>
                   <td>{order.createdAt}</td>
-                  <td><button className="admin-icon-button" type="button" aria-label={`주문 ${order.id} 상세 보기`} onClick={() => setSelectedOrder(order)}><Eye size={17} /></button></td>
+                  <td>
+                    <div className="admin-action-buttons">
+                      {order.status === 'PAID' && (
+                        <button className="admin-primary-button admin-complete-button" type="button" disabled={completingOrderId !== null} onClick={() => handleCompleteOrder(order)}>
+                          <CheckCircle2 size={15} />
+                          {completingOrderId === order.id ? '처리 중' : '완료 처리'}
+                        </button>
+                      )}
+                      <button className="admin-icon-button" type="button" aria-label={`주문 ${order.id} 상세 보기`} onClick={() => setSelectedOrder(order)}><Eye size={17} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -331,7 +441,17 @@ export function AdminOrders() {
             </div>
             <div className="admin-detail-grid"><div><span>고객</span><strong>{selectedOrder.customer}</strong></div><div><span>채널</span><strong>{selectedOrder.channel}</strong></div><div><span>주문 일시</span><strong>{selectedOrder.createdAt}</strong></div><div><span>사용자 ID</span><strong>USER-{selectedOrder.id - 9200}</strong></div></div>
             <div className="admin-timeline"><div className="done"><b /><span><strong>주문 생성</strong><small>14:29:02</small></span></div><div className={selectedOrder.status === 'PAYMENT_FAILED' ? 'failed' : 'done'}><b /><span><strong>결제 승인 요청</strong><small>14:29:08</small></span></div><div><b /><span><strong>주문 처리 완료</strong><small>대기 중</small></span></div></div>
-            <div className="admin-drawer-actions"><button className="admin-outline-button" type="button">주문 취소</button><button className="admin-primary-button" type="button">상태 변경</button></div>
+            {selectedOrder.status === 'PAID' && (
+              <div className="admin-drawer-actions single">
+                <button className="admin-primary-button" type="button" disabled={completingOrderId !== null} onClick={() => handleCompleteOrder(selectedOrder)}>
+                  <CheckCircle2 size={16} />
+                  {completingOrderId === selectedOrder.id ? '완료 처리 중' : '주문 완료 처리'}
+                </button>
+              </div>
+            )}
+            {selectedOrder.status === 'COMPLETED' && (
+              <p className="admin-completed-note"><CheckCircle2 size={17} /> 이미 완료 처리된 주문입니다.</p>
+            )}
           </aside>
         </div>
       )}

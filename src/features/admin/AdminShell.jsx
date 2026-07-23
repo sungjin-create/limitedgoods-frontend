@@ -17,6 +17,7 @@ export function AdminShell({
   onLogout
 }) {
   const [activeSection, setActiveSection] = useState('overview');
+  const [sectionRefreshKey, setSectionRefreshKey] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productDraft, setProductDraft] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -35,6 +36,10 @@ export function AdminShell({
   }, [activeSection]);
 
   function handleSectionChange(sectionId) {
+    if (activeSection === sectionId) {
+      setSectionRefreshKey((current) => current + 1);
+    }
+
     setActiveSection(sectionId);
     setIsMenuOpen(false);
   }
@@ -77,6 +82,7 @@ export function AdminShell({
         <div className="admin-shell-notice"><Notice notice={notice} /></div>
         <div className="admin-shell-body">
           <AdminView
+            key={`${activeSection}-${sectionRefreshKey}`}
             activeSection={activeSection}
             adminForm={adminForm}
             loading={loading}

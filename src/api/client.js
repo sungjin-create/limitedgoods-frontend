@@ -75,10 +75,17 @@ export async function request(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestOptions = {
     ...fetchOptions,
     headers
-  });
+  };
+
+  // 목록 조회는 브라우저 캐시를 사용하지 않고 항상 서버의 최신 상태를 확인한다.
+  if (!fetchOptions.method || fetchOptions.method.toUpperCase() === 'GET') {
+    requestOptions.cache = 'no-store';
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
 
   const text = await response.text();
   let payload = null;

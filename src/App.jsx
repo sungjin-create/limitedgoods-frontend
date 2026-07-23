@@ -1,175 +1,144 @@
 import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, Clock3, Gauge } from 'lucide-react';
-import {
-  addCartItem,
-  AUTH_EXPIRED_EVENT,
-  cancelOrder,
-  createOrder,
-  deleteCartItem,
-  getCart,
-  getOrderDetail,
-  getOrders,
-  getProducts,
-  enterQueue,
-  getQueueStatus,
-  getUserInfo,
-  loginUser,
-  payOrder,
-  registerProduct,
-  signupUser,
-  TOKEN_KEY,
-  updateCartItem
-} from './api/index.js';
+import { registerProduct } from './api/index.js';
 import { Metric } from './components/Metric.jsx';
 import { Notice } from './components/Notice.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { Topbar } from './components/Topbar.jsx';
 import { AdminShell } from './features/admin/AdminShell.jsx';
 import { AuthPanel } from './features/auth/AuthPanel.jsx';
+import { useAuthSession } from './features/auth/useAuthSession.js';
 import { CartView } from './features/cart/CartView.jsx';
+import { useCart } from './features/cart/useCart.js';
 import { OrderSheetView } from './features/checkout/OrderSheetView.jsx';
+import { useCheckoutFlow } from './features/checkout/useCheckoutFlow.js';
+import { useAppNavigation } from './features/navigation/useAppNavigation.js';
 import { OrdersView } from './features/orders/OrdersView.jsx';
+import { useOrders } from './features/orders/useOrders.js';
 import { QueueView } from './features/queue/QueueView.jsx';
 import { ShopView } from './features/shop/ShopView.jsx';
+import { useProducts } from './features/shop/useProducts.js';
 import { isAdminToken } from './utils/auth.js';
-import { getCartSummary, normalizeCartItems } from './utils/cart.js';
-import { normalizeOrder } from './utils/orders.js';
-import { getProductAvailability, getPurchaseLimit } from './utils/productAvailability.js';
 import { INITIAL_PRODUCT_FORM } from "./types/product.js";
-
-const PRODUCT_PAGE_SIZE = 12;
-const SEARCH_DEBOUNCE_MS = 300;
-const SESSION_VALIDATION_INTERVAL_MS = 30000;
-const CHECKOUT_TOKEN_PREFIX = 'limitedgoods.checkoutToken.';
-const QUEUE_POLL_INTERVAL_MS = 2500;
 
 const initialNotice = {
   type: 'info',
   message: '상품 정보를 불러오고 있습니다.'
 };
 
-function buildCheckoutOrder(order, items) {
-  const responseItems = order?.items ?? order?.orderItems ?? [];
-  const sourceItems = responseItems.length > 0 ? responseItems : items;
-  const normalizedItems = sourceItems.map((item, index) => {
-    const product = item.product ?? {};
-    const productId = item.productId ?? item.product_id ?? product.id ?? item.id;
-    const quantity = Number(item.quantity ?? item.count ?? 1);
-    const price = Number(item.price ?? item.unitPrice ?? product.price ?? 0);
-
-    return {
-      id: item.id ?? item.orderItemId ?? item.cartItemId ?? `${productId}-${index}`,
-      productId,
-      name: item.productName ?? item.product_name ?? product.name ?? item.name ?? `상품 #${productId ?? '-'}`,
-      description: item.description ?? product.description ?? '',
-      imageUrl: item.imageUrl ?? item.image_url ?? product.imageUrl ?? product.image_url ?? '',
-      price,
-      quantity,
-      totalPrice: Number(item.totalPrice ?? item.total_price ?? price * quantity)
-    };
-  });
-  const fallbackTotal = normalizedItems.reduce((sum, item) => sum + item.totalPrice, 0);
-
-  return {
-    ...order,
-    orderId: order?.orderId ?? order?.id,
-    status: order?.status ?? 'CREATED',
-    items: normalizedItems,
-    totalPrice: Number(order?.totalPrice ?? order?.total_price ?? fallbackTotal)
-  };
-}
-
-function createCheckoutToken() {
-  return crypto.randomUUID();
-}
-
-function createCheckoutKey(items) {
-  return items
-    .map((item) => `${Number(item.productId)}:${Number(item.quantity)}`)
-    .sort()
-    .join('|');
-}
-
-function normalizeQueueResponse(data) {
-  const admitted = Boolean(data?.admitted ?? data?.isAdmitted ?? data?.allowed);
-  const admissionToken = data?.admissionToken ?? data?.token ?? '';
-  const positionValue = data?.position ?? data?.queuePosition ?? data?.waitingPosition ?? data?.rank;
-  const positionNumber = Number(positionValue);
-
-  return {
-    admitted,
-    admissionToken,
-    position: Number.isFinite(positionNumber) && positionNumber > 0 ? positionNumber : null
-  };
-}
-
-function validateAdmissionSnapshot(snapshot) {
-  if (snapshot.admitted && !snapshot.admissionToken) {
-    throw new Error('입장은 허용됐지만 admissionToken을 받지 못했습니다. 대기열에 다시 진입해 주세요.');
-  }
-}
-
-function getCheckoutStorageKey(checkoutKey) {
-  return `${CHECKOUT_TOKEN_PREFIX}${checkoutKey}`;
-}
-
-function removeStoredCheckoutToken(checkoutKey) {
-  if (!checkoutKey) {
-    return;
-  }
-
-  sessionStorage.removeItem(getCheckoutStorageKey(checkoutKey));
-}
-
-function clearStoredCheckoutTokens() {
-  Object.keys(sessionStorage)
-    .filter((key) => key.startsWith(CHECKOUT_TOKEN_PREFIX))
-    .forEach((key) => sessionStorage.removeItem(key));
-}
-
 export default function App() {
-  const [activeView, setActiveView] = useState('shop');
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
-  const [authStatus, setAuthStatus] = useState(() => (
-    localStorage.getItem(TOKEN_KEY) ? 'checking' : 'anonymous'
-  ));
-  const [products, setProducts] = useState([]);
-  const [productPage, setProductPage] = useState(0);
-  const [totalProductPages, setTotalProductPages] = useState(1);
-  const [isFirstProductPage, setIsFirstProductPage] = useState(true);
-  const [isLastProductPage, setIsLastProductPage] = useState(true);
-  const [orders, setOrders] = useState([]);
-  const [cartItems, setCartItems] = useState([]);
-  const [checkoutOrder, setCheckoutOrder] = useState(null);
-  const [queueState, setQueueState] = useState(null);
-  const [selectedProductId, setSelectedProductId] = useState(null);
-  const [isProductDetailOpen, setIsProductDetailOpen] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [authMode, setAuthMode] = useState('login');
-  const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
   const [adminForm, setAdminForm] = useState(INITIAL_PRODUCT_FORM);
   const [notice, setNotice] = useState(initialNotice);
   const [loading, setLoading] = useState(false);
-  const didMountSearch = useRef(false);
-  const isCreatingCheckout = useRef(false);
-  const queueSessionRef = useRef(0);
-  const queuePollTimerRef = useRef(null);
-  const queueRequestRef = useRef(null);
+  const checkoutFlowRef = useRef(null);
+  const sessionActionsRef = useRef(null);
+  const {
+    token,
+    authStatus,
+    authMode,
+    setAuthMode,
+    authForm,
+    setAuthForm,
+    submitAuth: handleAuthSubmit,
+    logout: handleLogout
+  } = useAuthSession({
+    setNotice,
+    setLoading,
+    onLogin: () => sessionActionsRef.current?.navigateToShop(),
+    onSessionCleared: () => sessionActionsRef.current?.clearSessionData(),
+    onValidationUnavailable: () => sessionActionsRef.current?.clearCartOnly()
+  });
+  const {
+    products,
+    setProducts,
+    selectedProduct,
+    selectedProductId,
+    setSelectedProductId,
+    quantity,
+    setQuantity,
+    searchQuery,
+    productPage,
+    totalProductPages,
+    isFirstProductPage,
+    isLastProductPage,
+    loadProducts,
+    handleProductPageChange,
+    handleSearchChange
+  } = useProducts({ setNotice });
   const isSignedIn = authStatus === 'authenticated';
   const isAdmin = isSignedIn && isAdminToken(token);
-  const selectedProduct = products.find((product) => product.id === selectedProductId) ?? products[0] ?? null;
-  const cartSummary = useMemo(() => getCartSummary(cartItems), [cartItems]);
-  const checkoutItems = useMemo(() => checkoutOrder?.items ?? [], [checkoutOrder]);
-  const checkoutSummary = useMemo(() => {
-    const summary = getCartSummary(checkoutItems);
-
-    return {
-      ...summary,
-      total: Number(checkoutOrder?.totalPrice ?? checkoutOrder?.total_price ?? summary.total)
-    };
-  }, [checkoutItems, checkoutOrder]);
+  const {
+    activeView,
+    isProductDetailOpen,
+    navigate: updateBrowserHistory,
+    goBack: goBackInApp,
+    protectCurrentEntry: replaceCurrentHistoryWithSafeRedirect
+  } = useAppNavigation({
+    selectedProductId,
+    onSelectProduct: setSelectedProductId,
+    onLeaveQueue: () => checkoutFlowRef.current?.resetQueueState(),
+    onUnsafeBack: (message) => {
+      checkoutFlowRef.current?.clearCheckout();
+      setNotice({ type: 'info', message });
+    }
+  });
+  const {
+    cartItems,
+    cartSummary,
+    clearCart,
+    loadCart,
+    addProduct: addCartProduct,
+    updateQuantity: handleUpdateCartItemQuantity,
+    removeItem: handleDeleteCartItem
+  } = useCart({
+    isSignedIn,
+    setNotice,
+    setLoading,
+    onAuthRequired: openAuthView
+  });
+  const {
+    orders,
+    setOrders,
+    clearOrders,
+    loadOrders,
+    loadOrderDetail,
+    payExistingOrder: handlePayOrder,
+    cancelExistingOrder: handleCancelOrder
+  } = useOrders({ setNotice, setLoading });
+  const checkoutFlow = useCheckoutFlow({
+    selectedProduct,
+    quantity,
+    cartItems,
+    setOrders,
+    loadOrders,
+    loadCart,
+    navigate: updateBrowserHistory,
+    protectCurrentEntry: replaceCurrentHistoryWithSafeRedirect,
+    setNotice,
+    setLoading
+  });
+  checkoutFlowRef.current = checkoutFlow;
+  const {
+    checkoutItems,
+    checkoutSummary,
+    queueState,
+    resetQueueState,
+    resetCheckoutFlow,
+    createProductOrder: handleCreateOrder,
+    createCartOrder: handleOpenOrderSheet,
+    payCheckoutOrder: handlePayCartOrders
+  } = checkoutFlow;
+  sessionActionsRef.current = {
+    navigateToShop: () => updateBrowserHistory('shop', { replace: true }),
+    clearCartOnly: clearCart,
+    clearSessionData: () => {
+      clearOrders();
+      clearCart();
+      resetCheckoutFlow();
+      updateBrowserHistory('shop', { replace: true });
+    }
+  };
 
   const metrics = useMemo(() => {
     const totalStock = products.reduce((sum, product) => sum + Number(product.stock ?? 0), 0);
@@ -179,672 +148,48 @@ export default function App() {
     return { totalStock, reserved, paid };
   }, [orders, products]);
 
-  function getCheckoutToken(orderItems) {
-    const checkoutKey = createCheckoutKey(orderItems);
-    const storageKey = getCheckoutStorageKey(checkoutKey);
-    const savedToken = sessionStorage.getItem(storageKey);
-
-    if (savedToken) {
-      return { checkoutKey, checkoutToken: savedToken };
-    }
-
-    const checkoutToken = createCheckoutToken();
-    sessionStorage.setItem(storageKey, checkoutToken);
-
-    return { checkoutKey, checkoutToken };
-  }
-
-  function clearQueuePolling() {
-    if (queuePollTimerRef.current) {
-      window.clearTimeout(queuePollTimerRef.current);
-      queuePollTimerRef.current = null;
-    }
-  }
-
-  function resetQueueState() {
-    queueSessionRef.current += 1;
-    queueRequestRef.current = null;
-    clearQueuePolling();
-    setQueueState(null);
-  }
-
-  async function createCheckoutOrder(orderItems, { checkoutKey, checkoutToken, admissionToken, successMessage }) {
-    const data = await createOrder(
-      orderItems.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity
-      })),
-      { checkoutToken, admissionToken }
-    );
-
-    setCheckoutOrder({
-      ...buildCheckoutOrder(data, orderItems),
-      checkoutKey,
-      checkoutToken,
-      admissionToken
-    });
-    setActiveView('checkout');
-    setNotice({ type: 'success', message: successMessage });
-  }
-
-  async function pollQueueStatus(sessionId) {
-    const queueRequest = queueRequestRef.current;
-
-    if (!queueRequest || queueRequest.sessionId !== sessionId) {
-      return;
-    }
-
-    try {
-      const snapshot = normalizeQueueResponse(await getQueueStatus(queueRequest.productId));
-
-      validateAdmissionSnapshot(snapshot);
-
-      if (queueSessionRef.current !== sessionId) {
-        return;
-      }
-
-      setQueueState((current) => {
-        if (!current) {
-          return current;
-        }
-
-        return {
-          ...current,
-          phase: snapshot.admitted ? 'admitted' : 'waiting',
-          position: snapshot.position ?? current.position,
-          admissionToken: snapshot.admissionToken || current.admissionToken
-        };
-      });
-
-      if (snapshot.admitted) {
-        clearQueuePolling();
-        queueRequestRef.current = null;
-        setLoading(true);
-
-        try {
-          await createCheckoutOrder(queueRequest.orderItems, {
-            checkoutKey: queueRequest.checkoutKey,
-            checkoutToken: queueRequest.checkoutToken,
-            admissionToken: snapshot.admissionToken,
-            successMessage: `${queueRequest.productName} 주문서가 생성되었습니다.`
-          });
-        } finally {
-          setLoading(false);
-          resetQueueState();
-        }
-
-        return;
-      }
-    } catch (error) {
-      if (queueSessionRef.current !== sessionId) {
-        return;
-      }
-
-      clearQueuePolling();
-      setQueueState((current) => (current ? { ...current, phase: 'error' } : current));
-      setNotice({ type: 'error', message: `대기열 상태를 확인하지 못했습니다. ${error.message}` });
-      return;
-    }
-
-    queuePollTimerRef.current = window.setTimeout(() => {
-      pollQueueStatus(sessionId);
-    }, QUEUE_POLL_INTERVAL_MS);
-  }
-
-  async function beginQueuedCheckout(orderItems) {
-    const firstItem = orderItems[0];
-    const productId = Number(firstItem?.productId);
-
-    if (!Number.isFinite(productId) || productId <= 0) {
-      throw new Error('대기열에 진입할 상품을 찾지 못했습니다.');
-    }
-
-    clearQueuePolling();
-    queueRequestRef.current = null;
-
-    const { checkoutKey, checkoutToken } = getCheckoutToken(orderItems);
-    const sessionId = queueSessionRef.current + 1;
-
-    queueSessionRef.current = sessionId;
-    queueRequestRef.current = {
-      sessionId,
-      productId,
-      productName: firstItem?.name ?? `상품 #${productId}`,
-      orderItems,
-      checkoutKey,
-      checkoutToken
-    };
-    setQueueState({
-      phase: 'entering',
-      product: {
-        id: productId,
-        name: firstItem?.name ?? `상품 #${productId}`,
-        description: firstItem?.description ?? '',
-        imageUrl: firstItem?.imageUrl ?? '',
-        price: Number(firstItem?.price ?? 0),
-        stock: Number(selectedProduct?.stock ?? 0)
-      },
-      productId,
-      productName: firstItem?.name ?? `상품 #${productId}`,
-      quantity: Number(firstItem?.quantity ?? 1),
-      position: null,
-      admissionToken: '',
-      totalPrice: Number(firstItem?.totalPrice ?? Number(firstItem?.price ?? 0) * Number(firstItem?.quantity ?? 1))
-    });
-
-    const snapshot = normalizeQueueResponse(await enterQueue(productId));
-
-    validateAdmissionSnapshot(snapshot);
-
-    if (queueSessionRef.current !== sessionId) {
-      return;
-    }
-    
-    if (snapshot.admitted) {
-      queueRequestRef.current = null;
-      setLoading(true);
-
-      try {
-        await createCheckoutOrder(orderItems, {
-          checkoutKey,
-          checkoutToken,
-          admissionToken: snapshot.admissionToken,
-          successMessage: `${firstItem?.name ?? '상품'} 주문서가 생성되었습니다.`
-        });
-      } finally {
-        setLoading(false);
-        resetQueueState();
-      }
-
-      return;
-    }
-
-    setQueueState((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return {
-        ...current,
-        phase: 'waiting',
-        position: snapshot.position,
-        admissionToken: snapshot.admissionToken || current.admissionToken
-      };
-    });
-    setActiveView('queue');
-    setLoading(false);
-    clearQueuePolling();
-    queuePollTimerRef.current = window.setTimeout(() => {
-      pollQueueStatus(sessionId);
-    }, QUEUE_POLL_INTERVAL_MS);
-  }
-
-  useEffect(() => {
-    loadProducts(0, '');
-  }, []);
-
-  useEffect(() => {
-    if (!token) {
-      setAuthStatus('anonymous');
-      setCartItems([]);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function validateSession() {
-      try {
-        await getUserInfo();
-
-        if (!cancelled) {
-          setAuthStatus('authenticated');
-        }
-      } catch (error) {
-        if (cancelled || error.status === 401 || error.status === 403) {
-          return;
-        }
-
-        setCartItems([]);
-        setAuthStatus('unverified');
-        setNotice({ type: 'error', message: '서버에서 로그인 상태를 확인하지 못했습니다. 서버 연결 후 다시 확인합니다.' });
-      }
-    }
-
-    function validateVisibleSession() {
-      if (document.visibilityState === 'visible') {
-        validateSession();
-      }
-    }
-
-    validateSession();
-    window.addEventListener('focus', validateSession);
-    document.addEventListener('visibilitychange', validateVisibleSession);
-    const intervalId = window.setInterval(validateVisibleSession, SESSION_VALIDATION_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', validateSession);
-      document.removeEventListener('visibilitychange', validateVisibleSession);
-      window.clearInterval(intervalId);
-    };
-  }, [token]);
-
   useEffect(() => {
     if (isSignedIn) {
       loadOrders();
       loadCart();
     } else {
-      setOrders([]);
-      setCartItems([]);
+      clearOrders();
+      clearCart();
     }
   }, [isSignedIn]);
 
   useEffect(() => {
     if (activeView === 'admin' && !isAdmin) {
-      setActiveView('shop');
+      updateBrowserHistory('shop', { replace: true });
       setNotice({ type: 'error', message: '관리자만 접근할 수 있는 메뉴입니다.' });
     }
   }, [activeView, isAdmin]);
 
   useEffect(() => {
-    function expireSession() {
-      localStorage.removeItem(TOKEN_KEY);
-      setToken('');
-      setAuthStatus('anonymous');
-      setOrders([]);
-      setCartItems([]);
-      setCheckoutOrder(null);
-      resetQueueState();
-      clearStoredCheckoutTokens();
-      setActiveView('shop');
-      setNotice({ type: 'info', message: '로그인 세션이 만료되어 로그아웃되었습니다.' });
+    refreshView(activeView);
+  }, [activeView]);
+
+  function refreshView(view) {
+    if (view === 'shop' || view === 'admin') {
+      return loadProducts(view === 'shop' ? productPage : 0);
     }
 
-    function syncToken(event) {
-      if (event.key === TOKEN_KEY) {
-        setToken(event.newValue ?? '');
-        setAuthStatus(event.newValue ? 'checking' : 'anonymous');
-      }
+    if (view === 'cart') {
+      return loadCart();
     }
 
-    window.addEventListener(AUTH_EXPIRED_EVENT, expireSession);
-    window.addEventListener('storage', syncToken);
-
-    return () => {
-      window.removeEventListener(AUTH_EXPIRED_EVENT, expireSession);
-      window.removeEventListener('storage', syncToken);
-    };
-  }, []);
-
-  useEffect(() => {
-    const hasSelectedProduct = products.some((product) => product.id === selectedProductId);
-
-    if (products.length > 0 && !hasSelectedProduct) {
-      setSelectedProductId(products[0].id);
-    }
-  }, [products, selectedProductId]);
-
-  useEffect(() => {
-    if (!didMountSearch.current) {
-      didMountSearch.current = true;
-      return undefined;
+    if (view === 'orders') {
+      return loadOrders();
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setIsProductDetailOpen(false);
-      loadProducts(0, searchQuery);
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [searchQuery]);
-
-  async function loadProducts(page = 0, keyword = searchQuery) {
-    try {
-      const data = await getProducts({ page, size: PRODUCT_PAGE_SIZE, keyword });
-      const nextProducts = Array.isArray(data) ? data : (data.content ?? []);
-
-      setProducts(nextProducts);
-      setProductPage(data.number ?? page);
-      setTotalProductPages(Array.isArray(data) ? 1 : (data.totalPages || 1));
-      setIsFirstProductPage(Array.isArray(data) ? true : Boolean(data.first));
-      setIsLastProductPage(Array.isArray(data) ? true : Boolean(data.last));
-      setNotice({ type: 'success', message: '상품 목록을 최신 상태로 불러왔습니다.' });
-    } catch (error) {
-      setProducts([]);
-      setProductPage(0);
-      setTotalProductPages(1);
-      setIsFirstProductPage(true);
-      setIsLastProductPage(true);
-      setNotice({ type: 'error', message: `상품 목록을 불러오지 못했습니다. ${error.message}` });
-    }
-  }
-
-  async function loadCart() {
-    if (!isSignedIn) {
-      setCartItems([]);
-      return;
-    }
-
-    try {
-      const data = await getCart();
-      setCartItems(normalizeCartItems(data));
-    } catch (error) {
-      setCartItems([]);
-      setNotice({ type: 'error', message: `장바구니를 불러오지 못했습니다. ${error.message}` });
-    }
-  }
-
-  function handleProductPageChange(nextPage) {
-    if (nextPage < 0 || nextPage >= totalProductPages || nextPage === productPage) {
-      return;
-    }
-
-    setIsProductDetailOpen(false);
-    loadProducts(nextPage);
-  }
-
-  function handleSearchChange(nextQuery) {
-    setSearchQuery(nextQuery);
-    setIsProductDetailOpen(false);
-  }
-
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
-    setLoading(true);
-
-    try {
-      if (authMode === 'signup') {
-        await signupUser(authForm);
-        setAuthMode('login');
-        setNotice({ type: 'success', message: '회원가입이 완료되었습니다. 같은 정보로 로그인해 주세요.' });
-        return;
-      }
-
-      const data = await loginUser(authForm);
-
-      localStorage.setItem(TOKEN_KEY, data.accessToken);
-      setToken(data.accessToken);
-      setAuthStatus('checking');
-      setActiveView('shop');
-      setNotice({ type: 'success', message: '로그인 정보를 확인하고 있습니다.' });
-    } catch (error) {
-      window.alert(error.message);
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleAddToCart() {
-    if (!selectedProduct) {
-      setNotice({ type: 'error', message: '장바구니에 담을 상품을 먼저 선택해 주세요.' });
-      return;
-    }
-
-    if (!isSignedIn) {
-      setNotice({ type: 'error', message: '로그인 후 장바구니에 담을 수 있습니다.' });
-      openAuthView();
-      return;
-    }
-
-    const availability = getProductAvailability(selectedProduct);
-    if (!availability.canPurchase) {
-      setNotice({ type: 'error', message: availability.message });
-      return;
-    }
-
-    const purchaseLimit = getPurchaseLimit(selectedProduct);
-    const maxQuantity = Math.min(Number(selectedProduct.stock ?? 0), purchaseLimit ?? Number.MAX_SAFE_INTEGER);
-    const safeQuantity = Math.max(1, Math.min(maxQuantity, Number(quantity) || 1));
-    setLoading(true);
-
-    try {
-      await addCartItem({
-        productId: selectedProduct.id,
-        quantity: safeQuantity
-      });
-      await loadCart();
-      setNotice({ type: 'success', message: `${selectedProduct.name} ${safeQuantity}개를 장바구니에 담았습니다.` });
-    } catch (error) {
-      window.alert(error.message);
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCreateOrder() {
-    if (!selectedProduct) {
-      setNotice({ type: 'error', message: '주문할 상품을 먼저 선택해 주세요.' });
-      return;
-    }
-
-    const availability = getProductAvailability(selectedProduct);
-    if (!availability.canPurchase) {
-      setNotice({ type: 'error', message: availability.message });
-      return;
-    }
-
-    const purchaseLimit = getPurchaseLimit(selectedProduct);
-    const maxQuantity = Math.min(Number(selectedProduct.stock ?? 0), purchaseLimit ?? Number.MAX_SAFE_INTEGER);
-    const safeQuantity = Math.max(1, Math.min(maxQuantity, Number(quantity) || 1));
-
-    if (isCreatingCheckout.current) {
-      return;
-    }
-
-    isCreatingCheckout.current = true;
-    setLoading(true);
-
-    try {
-      const orderItems = [
-        {
-          productId: selectedProduct.id,
-          name: selectedProduct.name,
-          description: selectedProduct.description,
-          imageUrl: selectedProduct.imageUrl,
-          price: selectedProduct.price,
-          quantity: safeQuantity
-        }
-      ];
-
-      if (selectedProduct.type === 'LIMITED') {
-        await beginQueuedCheckout(orderItems);
-      } else {
-        const { checkoutKey, checkoutToken } = getCheckoutToken(orderItems);
-
-        await createCheckoutOrder(orderItems, {
-          checkoutKey,
-          checkoutToken,
-          successMessage: `${selectedProduct.name} 주문서가 생성되었습니다.`
-        });
-      }
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      isCreatingCheckout.current = false;
-      setLoading(false);
-    }
-  }
-
-  async function handleOpenOrderSheet() {
-    if (cartItems.length === 0) {
-      setNotice({ type: 'error', message: '주문할 장바구니 상품이 없습니다.' });
-      return;
-    }
-
-    if (isCreatingCheckout.current) {
-      return;
-    }
-
-    isCreatingCheckout.current = true;
-    setLoading(true);
-
-    try {
-      const orderItems = cartItems.map((item) => ({
-        productId: item.productId,
-        name: item.name,
-        description: item.description,
-        imageUrl: item.imageUrl,
-        price: item.price,
-        quantity: item.quantity,
-        totalPrice: item.totalPrice
-      }));
-      const { checkoutKey, checkoutToken } = getCheckoutToken(orderItems);
-      const data = await createOrder(orderItems, { checkoutToken });
-
-      setCheckoutOrder({
-        ...buildCheckoutOrder(data, orderItems),
-        checkoutKey,
-        checkoutToken
-      });
-      setActiveView('checkout');
-      setNotice({ type: 'success', message: '장바구니 상품 주문서가 생성되었습니다.' });
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      isCreatingCheckout.current = false;
-      setLoading(false);
-    }
-  }
-
-  async function handlePayCartOrders() {
-    if (!checkoutOrder?.orderId) {
-      setNotice({ type: 'error', message: '결제할 주문서가 없습니다.' });
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const paidData = await payOrder(checkoutOrder.orderId);
-      const paidOrder = {
-        ...checkoutOrder,
-        ...paidData,
-        status: paidData.status ?? 'PAID'
-      };
-      const firstItem = checkoutOrder.items[0] ?? {};
-
-      setCheckoutOrder(paidOrder);
-      setOrders((current) => [normalizeOrder(paidOrder, {
-        id: firstItem.productId,
-        name: firstItem.name,
-        price: firstItem.price
-      }, firstItem.quantity ?? 1), ...current]);
-      if (checkoutOrder.checkoutKey) {
-        removeStoredCheckoutToken(checkoutOrder.checkoutKey);
-      }
-      await loadOrders();
-      await loadCart();
-      setNotice({ type: 'success', message: '결제가 완료되었습니다.' });
-      setActiveView('orders');
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleUpdateCartItemQuantity(cartItemId, nextQuantity) {
-    const safeQuantity = Math.max(1, Number(nextQuantity) || 1);
-    setLoading(true);
-
-    try {
-      await updateCartItem({ cartItemId, quantity: safeQuantity });
-      await loadCart();
-      setNotice({ type: 'success', message: '장바구니 수량을 변경했습니다.' });
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDeleteCartItem(cartItemId) {
-    setLoading(true);
-
-    try {
-      await deleteCartItem(cartItemId);
-      await loadCart();
-      setNotice({ type: 'success', message: '장바구니에서 상품을 삭제했습니다.' });
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handlePayOrder(orderId, forceFail = false) {
-    setLoading(true);
-
-    try {
-      const data = await payOrder(orderId, { forceFail });
-
-      setOrders((current) => current.map((order) => (
-        order.orderId === orderId ? { ...order, ...data, status: data.status ?? 'PAID' } : order
-      )));
-      setNotice({
-        type: forceFail ? 'error' : 'success',
-        message: forceFail ? '결제 실패 시나리오를 확인했습니다.' : '결제가 완료되었습니다.'
-      });
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCancelOrder(orderId) {
-    setLoading(true);
-
-    try {
-      const data = await cancelOrder(orderId);
-      setOrders((current) => current.map((order) => (
-        order.orderId === orderId ? { ...order, ...data, status: data.status ?? 'CANCELED' } : order
-      )));
-      setNotice({ type: 'success', message: '주문이 취소되었습니다.' });
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadOrders() {
-    try {
-      const data = await getOrders();
-      setOrders(Array.isArray(data) ? data : []);
-    } catch {
-      setOrders([]);
-    }
-  }
-
-  async function loadOrderDetail(orderId) {
-    const detail = await getOrderDetail(orderId);
-
-    setOrders((current) => current.map((order) => {
-      const currentOrderId = order.orderId ?? order.id;
-
-      if (String(currentOrderId) !== String(orderId)) {
-        return order;
-      }
-
-      return {
-        ...order,
-        ...detail,
-        orderId: detail.orderId ?? detail.id ?? currentOrderId,
-        items: Array.isArray(detail.items) ? detail.items : []
-      };
-    }));
-
-    return detail;
+    return undefined;
   }
 
   async function handleRegisterProduct(event) {
     event.preventDefault();
 
     if (!isAdmin) {
-      setActiveView('shop');
+      updateBrowserHistory('shop', { replace: true });
       setNotice({ type: 'error', message: '관리자만 상품을 등록할 수 있습니다.' });
       return;
     }
@@ -865,54 +210,44 @@ export default function App() {
   }
 
   function handleCartClick() {
-    setActiveView('cart');
-    setIsProductDetailOpen(false);
-    loadCart();
-  }
+    if (activeView === 'cart') {
+      refreshView('cart');
+      return;
+    }
 
-  function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY);
-    setToken('');
-    setAuthStatus('anonymous');
-    setOrders([]);
-    setCartItems([]);
-    setCheckoutOrder(null);
-    resetQueueState();
-    clearStoredCheckoutTokens();
-    setActiveView('shop');
-    setNotice({ type: 'info', message: '로그아웃되었습니다.' });
+    updateBrowserHistory('cart');
   }
 
   function openAuthView() {
     setAuthMode('login');
-    setActiveView('auth');
+    updateBrowserHistory('auth');
   }
 
   function handleNavigate(nextView) {
     if (nextView === 'admin' && !isAdmin) {
       setNotice({ type: 'error', message: '관리자만 접근할 수 있는 메뉴입니다.' });
-      setActiveView('shop');
+      updateBrowserHistory('shop', { replace: true });
       return;
     }
 
-    setActiveView(nextView);
+    if (activeView === nextView) {
+      refreshView(nextView);
+      return;
+    }
+
+    updateBrowserHistory(nextView);
   }
 
   function handleBackToStore() {
     resetQueueState();
-    setActiveView('shop');
-    setIsProductDetailOpen(false);
+    goBackInApp('shop');
   }
 
   function handleBackFromQueue() {
     resetQueueState();
-    setActiveView('shop');
+    goBackInApp('shop');
     setNotice({ type: 'info', message: '대기열을 종료하고 쇼핑 화면으로 돌아왔습니다.' });
   }
-
-  useEffect(() => () => {
-    clearQueuePolling();
-  }, []);
 
   if (activeView === 'admin' && isAdmin) {
     return (
@@ -978,11 +313,11 @@ export default function App() {
             isDetailOpen={isProductDetailOpen}
             onSearchChange={handleSearchChange}
             onSelectProduct={setSelectedProductId}
-            onOpenProductDetail={() => setIsProductDetailOpen(true)}
-            onCloseProductDetail={() => setIsProductDetailOpen(false)}
+            onOpenProductDetail={() => updateBrowserHistory('shop', { detailOpen: true })}
+            onCloseProductDetail={() => goBackInApp('shop')}
             onQuantityChange={setQuantity}
             onCreateOrder={handleCreateOrder}
-            onAddToCart={handleAddToCart}
+            onAddToCart={() => addCartProduct(selectedProduct, quantity)}
             onRefreshProducts={() => loadProducts(productPage)}
             onProductPageChange={handleProductPageChange}
           />
@@ -1001,7 +336,7 @@ export default function App() {
             cartSummary={cartSummary}
             loading={loading}
             isSignedIn={isSignedIn}
-            onBackToShop={() => setActiveView('shop')}
+            onBackToShop={() => goBackInApp('shop')}
             onRefreshCart={loadCart}
             onUpdateCartItemQuantity={handleUpdateCartItemQuantity}
             onDeleteCartItem={handleDeleteCartItem}
@@ -1014,7 +349,7 @@ export default function App() {
             cartItems={checkoutItems}
             cartSummary={checkoutSummary}
             loading={loading}
-            onBackToCart={() => setActiveView('cart')}
+            onBackToCart={() => goBackInApp('cart')}
             onPayCartOrders={handlePayCartOrders}
           />
         )}

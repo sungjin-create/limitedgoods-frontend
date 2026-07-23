@@ -87,6 +87,13 @@ export function getAdminOrders({ startAt, endAt } = {}) {
   });
 }
 
+export function completeAdminOrder(orderId) {
+  return request(`/api/admin/backoffice/order/${Number(orderId)}/complete`, {
+    method: 'PATCH',
+    authRequired: true
+  });
+}
+
 export function getAdminProducts({ status } = {}) {
   const params = new URLSearchParams();
 
